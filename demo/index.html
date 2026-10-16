@@ -1,0 +1,544 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wagering Processor · Jungle Gaming</title>
+<meta name="description" content="Processador distribuído de apostas: veja idempotência, concorrência e ledger funcionando ao vivo contra a API real.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🦧%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper:#EDF1EA; --surface:#FAFBF8; --ink:#11251E; --muted:#587066; --line:#D3DCD0;
+    --primary:#0F3D31; --on-primary:#F4F8F2; --focus:#C98A12;
+    --credit:#1B7A56; --creditbg:#DDF1E6; --debit:#B2402E; --debitbg:#FBE4DF;
+    --pend:#8A5F00; --pendbg:#FBEBC8; --info:#1E5E99; --infobg:#DFEBF7;
+    --hero:#0F3D31; --hero-ink:#EAF3EC; --hero-muted:#9CBBAA; --hero-line:#2A5A4B; --gold:#F0B33A;
+    --rc-bg:#F8F9F4; --rc-ink:#11251E; --rc-muted:#66796F; --rc-line:#D9DFD2;
+    --display:"Bricolage Grotesque","Avenir Next","Segoe UI",system-ui,sans-serif;
+    --body:"Instrument Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#0A1612; --surface:#112119; --ink:#E5EEE8; --muted:#8FA79C; --line:#223A30;
+      --primary:#F0B33A; --on-primary:#241800; --focus:#F0B33A;
+      --credit:#6FD6A0; --creditbg:#12301F; --debit:#FF9482; --debitbg:#3A1815;
+      --pend:#F0C15F; --pendbg:#35290D; --info:#8CBBF0; --infobg:#14263B;
+      --hero:#08241D; --hero-line:#1F4A3D;
+    }
+  }
+  * { box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.5 var(--body); -webkit-font-smoothing:antialiased; }
+  a { color:inherit; }
+  code { font-family:var(--mono); font-size:.88em; background:color-mix(in srgb,var(--ink) 8%,transparent); padding:1px 5px; border-radius:4px; }
+  .wrap { max-width:1200px; margin:0 auto; padding:0 20px; }
+
+  /* ---------- topo + hero ---------- */
+  .hero-band { background:var(--hero); color:var(--hero-ink); position:relative; overflow:hidden; }
+  .hero-band::before { /* folhagem: arcos sobrepostos, só ambiente */
+    content:""; position:absolute; inset:0; pointer-events:none; opacity:.5;
+    background:
+      radial-gradient(60% 90% at 105% -10%, #1B5B49 0, transparent 60%),
+      radial-gradient(40% 70% at -5% 110%, #124A3B 0, transparent 65%);
+  }
+  .top { display:flex; align-items:center; gap:14px; padding:18px 0; position:relative; flex-wrap:wrap; }
+  .brand { display:flex; align-items:center; gap:10px; font:700 17px/1 var(--display); letter-spacing:-.01em; text-decoration:none; }
+  .brand .mark { width:34px; height:34px; border-radius:10px; background:var(--gold); color:#2A1B00; display:grid; place-items:center; font-size:19px; }
+  .brand small { font:500 13px var(--body); color:var(--hero-muted); letter-spacing:0; }
+  .top nav { margin-left:auto; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .top nav a { text-decoration:none; font-size:13.5px; color:var(--hero-muted); padding:6px 10px; border-radius:8px; }
+  .top nav a:hover { color:var(--hero-ink); background:#ffffff14; }
+  .pill { display:inline-flex; align-items:center; gap:7px; padding:5px 11px; border-radius:999px; font-size:12.5px; font-weight:600; background:#ffffff14; color:var(--hero-muted); }
+  .pill i { width:8px; height:8px; border-radius:50%; background:currentColor; }
+  .pill.ok { color:#7BE0AA; } .pill.bad { color:#FF9D8F; }
+  .pill.ok i { box-shadow:0 0 0 0 #7BE0AA99; animation:beat 2.4s ease-out infinite; }
+  @keyframes beat { 70% { box-shadow:0 0 0 7px #7BE0AA00; } 100% { box-shadow:0 0 0 0 #7BE0AA00; } }
+
+  .hero { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(300px,.85fr); gap:48px; padding-block:36px 56px; position:relative; align-items:start; }
+  .hero h1 { font:800 clamp(34px,5.2vw,60px)/1.02 var(--display); letter-spacing:-.03em; margin:0 0 18px; max-width:15ch; text-wrap:balance; }
+  .hero .lead { font-size:17px; color:var(--hero-muted); max-width:52ch; margin:0 0 26px; }
+  .runners { display:grid; gap:10px; max-width:560px; }
+  .runner { all:unset; box-sizing:border-box; cursor:pointer; display:grid; grid-template-columns:1fr auto; gap:2px 14px; align-items:center; padding:13px 16px; border:1px solid var(--hero-line); border-radius:12px; background:#ffffff0a; transition:background .15s,border-color .15s; }
+  .runner:hover:not(:disabled) { background:#ffffff16; border-color:var(--gold); }
+  .runner:focus-visible { outline:2px solid var(--gold); outline-offset:3px; }
+  .runner:disabled { opacity:.5; cursor:not-allowed; }
+  .runner b { font:700 16px var(--display); }
+  .runner span { grid-column:1; color:var(--hero-muted); font-size:13.5px; }
+  .runner .go { grid-row:1 / span 2; grid-column:2; width:34px; height:34px; border-radius:50%; background:var(--gold); color:#2A1B00; display:grid; place-items:center; font-weight:800; }
+  .runner.active { background:var(--gold); border-color:var(--gold); color:#2A1B00; }
+  .runner.active .go { background:#2A1B00; color:var(--gold); }
+  .runner.active:hover:not(:disabled) { background:#F6C25E; }
+  .runner.running .go { animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .verdict { margin-top:22px; max-width:560px; min-height:20px; }
+  .verdict h2 { font:700 14px var(--body); color:var(--hero-muted); margin:0 0 8px; }
+  .checks { margin:0; padding:0; list-style:none; display:grid; gap:6px; font-size:14px; }
+  .checks li { display:flex; gap:10px; align-items:baseline; opacity:0; transform:translateY(4px); animation:reveal .35s forwards; }
+  .checks li::before { content:"✓"; flex:none; width:20px; height:20px; border-radius:50%; background:#7BE0AA26; color:#7BE0AA; display:grid; place-items:center; font-size:12px; font-weight:800; line-height:1; transform:translateY(3px); }
+  .checks li.fail { color:#FFB4A8; } .checks li.fail::before { content:"✗"; background:#FF9D8F26; color:#FF9D8F; }
+  .checks li.wait::before { content:"…"; background:#ffffff1c; color:var(--hero-muted); }
+  @keyframes reveal { to { opacity:1; transform:none; } }
+
+  /* ---------- fita do ledger (recibo) ---------- */
+  .receipt { background:var(--rc-bg); color:var(--rc-ink); border-radius:14px 14px 0 0; padding:22px 22px 10px; position:relative; box-shadow:0 30px 60px -28px #000a; }
+  .receipt::after { content:""; position:absolute; left:0; right:0; bottom:-14px; height:14px;
+    background:linear-gradient(135deg,var(--rc-bg) 7px,transparent 0) 0 0/14px 14px, linear-gradient(225deg,var(--rc-bg) 7px,transparent 0) 0 0/14px 14px; }
+  .rc-head { display:flex; justify-content:space-between; align-items:baseline; gap:10px; font-size:13px; color:var(--rc-muted); }
+  .rc-head b { color:var(--rc-ink); font:700 14px var(--display); }
+  .rc-balance { font:800 clamp(38px,5vw,52px)/1.05 var(--display); letter-spacing:-.03em; margin:10px 0 2px; font-variant-numeric:tabular-nums; }
+  .rc-balance.flash-up { animation:flashUp .9s ease-out; } .rc-balance.flash-down { animation:flashDown .9s ease-out; }
+  @keyframes flashUp { from { color:#1B9A6A; } } @keyframes flashDown { from { color:#C2412D; } }
+  .rc-meta { display:grid; grid-template-columns:auto 1fr; gap:3px 14px; margin:12px 0 0; padding:12px 0; border-top:1px dashed var(--rc-line); border-bottom:1px dashed var(--rc-line); font-size:12.5px; }
+  .rc-meta dt { color:var(--rc-muted); } .rc-meta dd { margin:0; font-family:var(--mono); font-size:12px; word-break:break-all; }
+  .tag { display:inline-block; padding:1px 8px; border-radius:999px; font:600 12px var(--body); }
+  .tag.ok { background:#DDF1E6; color:#176A49; } .tag.bad { background:#FBE4DF; color:#A33827; } .tag.idle { background:#E6EAE1; color:#587066; }
+  .tape { list-style:none; margin:6px 0 4px; padding:0; max-height:300px; overflow:auto; }
+  .tape li { display:grid; grid-template-columns:auto 1fr auto; gap:2px 12px; align-items:baseline; padding:9px 0; border-bottom:1px dashed var(--rc-line); animation:feed .4s ease-out; }
+  .tape li:last-child { border-bottom:0; }
+  @keyframes feed { from { opacity:0; transform:translateY(-8px); } }
+  .tape .dir { font:700 12px var(--body); padding:2px 8px; border-radius:6px; }
+  .tape .dir.CREDIT { background:#DDF1E6; color:#176A49; } .tape .dir.DEBIT { background:#FBE4DF; color:#A33827; }
+  .tape .after { color:var(--rc-muted); font-size:12px; }
+  .tape .amt { font:700 14px var(--mono); text-align:right; } .tape .amt.CREDIT { color:#176A49; } .tape .amt.DEBIT { color:#A33827; }
+  .tape small { grid-column:2 / 4; color:var(--rc-muted); font:12px var(--mono); }
+  .rc-empty { color:var(--rc-muted); font-size:13.5px; padding:14px 0 10px; }
+  .rc-foot { padding:10px 0 20px; font-size:12px; color:var(--rc-muted); text-align:center; }
+
+  /* ---------- bancada ---------- */
+  main { padding-block:56px 24px; }
+  .bench-head { margin-bottom:20px; }
+  .bench-head h2 { font:800 28px/1.1 var(--display); letter-spacing:-.02em; margin:0; }
+  .bench-head p { margin:0; color:var(--muted); max-width:60ch; }
+  .bench { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:20px; align-items:start; }
+  .stack { display:grid; gap:20px; }
+  section.panel { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:20px; }
+  section.panel h3 { font:700 17px var(--display); margin:0 0 6px; letter-spacing:-.01em; }
+  .sub { color:var(--muted); font-size:13.5px; margin:0 0 14px; }
+  label { display:block; font-size:12.5px; color:var(--muted); margin:10px 0 4px; font-weight:500; }
+  input { width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:9px; background:var(--paper); color:var(--ink); font:14px var(--mono); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; } .row > * { flex:1 1 140px; }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  button.b { padding:9px 14px; border:1px solid var(--line); border-radius:9px; background:var(--surface); color:var(--ink); font:600 14px var(--body); cursor:pointer; transition:border-color .12s,background .12s; }
+  button.b:hover:not(:disabled) { border-color:var(--ink); }
+  button.b.primary { background:var(--primary); border-color:var(--primary); color:var(--on-primary); }
+  button.b.primary:hover:not(:disabled) { filter:brightness(1.12); }
+  button.b:disabled { opacity:.4; cursor:not-allowed; }
+  button.b:focus-visible, input:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+  .hint { color:var(--muted); font-size:13px; margin:12px 0 0; }
+  .group-title { font:600 13px var(--body); margin:18px 0 0; color:var(--ink); }
+  .notice { margin-top:12px; padding:9px 12px; border-radius:9px; background:var(--pendbg); color:var(--pend); font-size:13.5px; display:none; } .notice.show { display:block; }
+
+  .log { max-height:560px; overflow:auto; display:grid; gap:7px; }
+  .entry { border:1px solid var(--line); border-radius:10px; padding:9px 12px; font-size:13.5px; background:var(--paper); }
+  .entry .top2 { display:flex; gap:8px; align-items:center; } .entry .top2 b { flex:1 1 auto; font-weight:600; }
+  .entry small { color:var(--muted); font-family:var(--mono); font-size:12px; }
+  .badge { display:inline-block; padding:2px 9px; border-radius:999px; font:600 12px var(--mono); background:var(--line); color:var(--muted); }
+  .badge.ok { background:var(--creditbg); color:var(--credit); } .badge.info { background:var(--infobg); color:var(--info); }
+  .badge.warn { background:var(--pendbg); color:var(--pend); } .badge.bad { background:var(--debitbg); color:var(--debit); }
+  .empty { color:var(--muted); font-size:13.5px; margin:0; }
+
+  /* ---------- rodapé ---------- */
+  .how { padding-block:48px 56px; }
+  .how h2 { font:800 24px var(--display); letter-spacing:-.02em; margin:0 0 18px; }
+  .how-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:28px; }
+  .how h4 { font:700 16px var(--display); margin:0 0 6px; } .how p { margin:0; color:var(--muted); font-size:14px; max-width:44ch; }
+  footer { border-top:1px solid var(--line); padding-block:20px 40px; color:var(--muted); font-size:13px; display:flex; gap:18px; flex-wrap:wrap; }
+  footer a { text-underline-offset:3px; }
+
+  @media (max-width:900px) {
+    .hero { grid-template-columns:minmax(0,1fr); gap:44px; padding-bottom:40px; }
+    .bench, .how-grid { grid-template-columns:minmax(0,1fr); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+    .checks li { opacity:1; transform:none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero-band">
+  <div class="wrap">
+    <header class="top">
+      <a class="brand" href="/"><span class="mark" aria-hidden="true">🦧</span><span>Jungle Gaming <small>Wagering Processor</small></span></a>
+      <span id="health" class="pill"><i></i><span id="health-text">verificando…</span></span>
+      <nav aria-label="Atalhos">
+        <a href="#bancada">Bancada</a>
+        <a href="/health/ready">health</a>
+        <a href="/metrics">métricas</a>
+      </nav>
+    </header>
+
+    <div class="hero">
+      <div>
+        <h1>Cada centavo, uma vez só.</h1>
+
+        <div class="runners" role="group" aria-label="Cenários do desafio">
+          <button class="runner active" id="scn-race"><b>2 apostas de 80 contra saldo de 100</b><i class="go" aria-hidden="true">▶</i></button>
+          <button class="runner" id="scn-dup"><b>Mesma aposta 50× em paralelo</b><i class="go" aria-hidden="true">▶</i></button>
+          <button class="runner" id="scn-order"><b>REFUND antes da BET</b><i class="go" aria-hidden="true">▶</i></button>
+        </div>
+
+        <div class="verdict" aria-live="polite">
+          <h2 id="verdict-title" hidden></h2>
+          <ul class="checks" id="checks"></ul>
+        </div>
+      </div>
+
+      <aside class="receipt" aria-label="Wallet e ledger ao vivo">
+        <div class="rc-head"><b>Wallet</b><span id="rc-state">sem wallet</span></div>
+        <div class="rc-balance" id="balance">R$ —</div>
+        <dl class="rc-meta">
+          <dt>walletId</dt><dd id="walletId">—</dd>
+          <dt>versão</dt><dd id="version">—</dd>
+          <dt>reconciliação</dt><dd><span class="tag idle" id="recon">aguardando</span></dd>
+        </dl>
+        <ul class="tape" id="ledger" aria-label="Lançamentos do ledger, do mais recente ao mais antigo"></ul>
+        <p class="rc-empty" id="ledger-empty">Nenhum lançamento ainda.</p>
+      </aside>
+    </div>
+  </div>
+</div>
+
+<main class="wrap" id="bancada">
+  <div class="bench-head">
+    <h2>Bancada</h2>
+  </div>
+
+  <div class="bench">
+    <div class="stack">
+      <section class="panel" aria-labelledby="h-wallet">
+        <h3 id="h-wallet">Wallet</h3>
+        <div class="row">
+          <div><label for="player">playerId</label><input id="player" spellcheck="false"></div>
+          <div style="flex:0 1 150px"><label for="initial">Saldo inicial (BRL)</label><input id="initial" value="100.00" inputmode="decimal"></div>
+        </div>
+        <div class="btns">
+          <button id="btn-create" class="b primary">Criar wallet</button>
+          <button id="btn-newplayer" class="b">Novo playerId</button>
+          <button id="btn-refresh" class="b">Atualizar</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="h-ops">
+        <h3 id="h-ops">Operações</h3>
+        <div class="row"><div style="flex:0 1 200px"><label for="amount">Valor (BRL)</label><input id="amount" value="25.00" inputmode="decimal"></div></div>
+        <div class="btns">
+          <button id="op-bet" class="b primary">BET</button>
+          <button id="op-win" class="b">WIN</button>
+          <button id="op-loss" class="b">LOSS</button>
+          <button id="op-refund" class="b">REFUND da última BET</button>
+          <button id="op-rollback" class="b">ROLLBACK da última BET</button>
+        </div>
+        <p class="group-title">Idempotência</p>
+        <div class="btns" style="margin-top:8px">
+          <button id="op-replay" class="b">Reenviar a última (mesma chave)</button>
+          <button id="op-conflict" class="b">Mesma chave, valor diferente</button>
+        </div>
+        <div class="notice" id="notice" role="status"></div>
+      </section>
+    </div>
+
+    <section class="panel" aria-labelledby="h-log">
+      <h3 id="h-log">Requisições</h3>
+      <div class="log" id="log"><p class="empty">Nada enviado ainda.</p></div>
+    </section>
+  </div>
+</main>
+
+<div class="wrap"><footer>
+  <a href="/health/live">/health/live</a><a href="/health/ready">/health/ready</a><a href="/metrics">/metrics</a>
+</footer></div>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const state = { walletId: null, playerId: null, lastBet: null, last: null, seq: 0, busy: false, shown: null };
+  const uid = () => crypto.randomUUID();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // ---------- HTTP ----------
+  async function api(method, path, { body, key } = {}) {
+    const t0 = performance.now();
+    const headers = {};
+    if (body) headers['content-type'] = 'application/json';
+    if (key) headers['Idempotency-Key'] = key;
+    let res;
+    try { res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined }); }
+    catch (e) { return { status: 0, json: { error: { code: 'NETWORK', message: String(e) } }, ms: Math.round(performance.now() - t0) }; }
+    let json = null; try { json = await res.json(); } catch {}
+    return { status: res.status, json, ms: Math.round(performance.now() - t0) };
+  }
+
+  // ---------- log ----------
+  const tone = (s) => (s === 200 ? 'info' : s === 201 ? 'ok' : s === 202 ? 'warn' : 'bad');
+  function summarize(r) {
+    const j = r.json || {};
+    if (j.error) return `${j.error.code}${j.error.retryable ? ' (reenviar)' : ''}`;
+    const parts = [];
+    if (j.status) parts.push(j.status);
+    if (j.failureCode) parts.push(j.failureCode);
+    if (j.balance) parts.push(`saldo ${j.balance.amount}`);
+    if (j.idempotentReplay === true) parts.push('replay');
+    return parts.join(' · ');
+  }
+  function log(label, r) {
+    const box = $('#log');
+    if (box.querySelector('.empty')) box.innerHTML = '';
+    const el = document.createElement('div'); el.className = 'entry';
+    const top = document.createElement('div'); top.className = 'top2';
+    const b = document.createElement('b'); b.textContent = label;
+    const badge = document.createElement('span'); badge.className = 'badge ' + tone(r.status); badge.textContent = r.status || 'erro';
+    top.append(b, badge);
+    const small = document.createElement('small'); small.textContent = `${summarize(r)} · ${r.ms} ms`;
+    el.append(top, small);
+    box.prepend(el);
+    while (box.children.length > 60) box.lastChild.remove();
+  }
+
+  // ---------- builders ----------
+  function txInput(kind, amount, extra = {}) {
+    state.seq += 1;
+    const ext = `demo-${Date.now().toString(36)}-${state.seq}`;
+    return {
+      providerId: 'provider-a', externalTransactionId: ext, playerId: state.playerId, walletId: state.walletId,
+      roundId: extra.roundId ?? `round-${Date.now().toString(36)}`, gameId: 'fortune-chimp', kind,
+      money: { amount, currency: 'BRL' }, ...extra,
+    };
+  }
+  const keyOf = (i) => `${i.providerId}:${i.externalTransactionId}`;
+  async function send(label, input, key = keyOf(input)) {
+    const r = await api('POST', '/wagering/transactions', { body: input, key });
+    log(`${label} ${input.kind} ${input.money.amount}`, r);
+    state.last = { input, key };
+    if (input.kind === 'BET' && r.status === 201) state.lastBet = input;
+    return r;
+  }
+
+  // ---------- saldo (a animação é só visual; o texto final vem sempre da string exata da API) ----------
+  function showBalance(amount) {
+    const el = $('#balance');
+    const final = `R$ ${amount}`;
+    const from = state.shown, to = Number(amount);
+    state.shown = to;
+    if (from === null || from === to || matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = final; return; }
+    el.classList.remove('flash-up', 'flash-down'); void el.offsetWidth;
+    el.classList.add(to > from ? 'flash-up' : 'flash-down');
+    const t0 = performance.now(), dur = 550;
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - p, 3);
+      if (p < 1) { el.textContent = `R$ ${(from + (to - from) * e).toFixed(2)}`; requestAnimationFrame(step); }
+      else el.textContent = final;
+    };
+    requestAnimationFrame(step);
+  }
+
+  // ---------- render ----------
+  async function refresh() {
+    if (!state.walletId) return;
+    const [w, l] = await Promise.all([api('GET', `/wallets/${state.walletId}`), api('GET', `/wallets/${state.walletId}/ledger?limit=200`)]);
+    if (w.json && w.json.balance) {
+      showBalance(w.json.balance.amount);
+      $('#version').textContent = String(w.json.version);
+    }
+    $('#walletId').textContent = state.walletId;
+    $('#rc-state').textContent = 'ao vivo';
+    const items = l.json && l.json.items ? l.json.items : [];
+    renderLedger(items);
+    return { wallet: w.json, ledger: items };
+  }
+  function renderLedger(items) {
+    const ul = $('#ledger');
+    $('#ledger-empty').hidden = items.length > 0;
+    $('#ledger-empty').textContent = 'Sem lançamentos.';
+    const known = new Set([...ul.children].map((li) => li.dataset.n));
+    ul.replaceChildren();
+    items.slice().reverse().forEach((e, idx) => {
+      const n = String(items.length - idx);
+      const li = document.createElement('li'); li.dataset.n = n;
+      if (known.has(n)) li.style.animation = 'none';
+      const dir = document.createElement('span'); dir.className = 'dir ' + e.direction; dir.textContent = e.direction === 'CREDIT' ? 'Crédito' : 'Débito';
+      const after = document.createElement('span'); after.className = 'after'; after.textContent = `saldo ${e.balanceAfter.amount}`;
+      const amt = document.createElement('span'); amt.className = 'amt ' + e.direction; amt.textContent = `${e.direction === 'CREDIT' ? '+' : '−'}${e.amount.amount}`;
+      const small = document.createElement('small'); small.textContent = `antes ${e.balanceBefore.amount} → depois ${e.balanceAfter.amount}`;
+      li.append(dir, after, amt, small);
+      ul.append(li);
+    });
+  }
+  async function reconcile(show = true) {
+    const r = await api('POST', `/wallets/${state.walletId}/reconciliation`);
+    if (show) log('Reconciliação', { ...r, json: { status: r.json && r.json.consistent ? 'CONSISTENTE' : 'DIVERGENTE', balance: r.json && r.json.storedBalance } });
+    const j = r.json || {}, tag = $('#recon');
+    tag.className = 'tag ' + (j.consistent ? 'ok' : 'bad');
+    tag.textContent = j.consistent ? `consistente · ${j.checkedEntries} lançamentos` : 'DIVERGENTE';
+    return j;
+  }
+
+  async function setChecks(title, items) {
+    const ul = $('#checks'), h = $('#verdict-title');
+    ul.replaceChildren();
+    h.hidden = !title; h.textContent = title || '';
+    for (const [ok, text, wait] of items) {
+      const li = document.createElement('li'); if (!ok) li.className = wait ? 'wait' : 'fail'; li.textContent = text;
+      ul.append(li);
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) { li.style.animationDelay = '0s'; await sleep(110); }
+    }
+  }
+  const setChecksNow = (title, items) => { setChecks(title, items); };
+
+  // ---------- wallet ----------
+  async function createWallet(amount) {
+    const playerId = uid();
+    const r = await api('POST', '/wallets', { body: { playerId, initialBalance: { amount, currency: 'BRL' } } });
+    log(`Criar wallet ${amount}`, { ...r, json: r.json && r.json.id ? { status: 'CRIADA', balance: r.json.balance } : r.json });
+    if (!r.json || !r.json.id) return false;
+    state.playerId = playerId; state.walletId = r.json.id; state.lastBet = null; state.last = null; state.shown = null;
+    $('#player').value = playerId;
+    updateButtons();
+    await refresh(); await reconcile(false);
+    return true;
+  }
+
+  // ---------- actions ----------
+  function notice(msg) { const n = $('#notice'); n.textContent = msg; n.classList.add('show'); setTimeout(() => n.classList.remove('show'), 4000); }
+  const need = () => { if (!state.walletId) { notice('Crie uma wallet primeiro.'); return false; } return true; };
+  async function guarded(fn, runner) {
+    if (state.busy) return; state.busy = true; updateButtons();
+    if (runner) runner.classList.add('running');
+    try { await fn(); } finally { if (runner) runner.classList.remove('running'); state.busy = false; updateButtons(); }
+  }
+  function updateButtons() {
+    const has = Boolean(state.walletId);
+    document.querySelectorAll('[data-needs-wallet]').forEach((b) => { b.disabled = state.busy || !has; });
+    ['btn-create', 'scn-race', 'scn-dup', 'scn-order'].forEach((id) => { $('#' + id).disabled = state.busy; });
+    $('#op-refund').disabled = state.busy || !state.lastBet; $('#op-rollback').disabled = state.busy || !state.lastBet;
+    $('#op-replay').disabled = state.busy || !state.last; $('#op-conflict').disabled = state.busy || !state.last;
+  }
+  async function op(kind) {
+    if (!need()) return;
+    const amount = $('#amount').value.trim();
+    let extra = {};
+    if (state.lastBet && (kind === 'WIN' || kind === 'LOSS')) extra = { roundId: state.lastBet.roundId, referenceExternalTransactionId: state.lastBet.externalTransactionId };
+    await send('', txInput(kind, amount, extra));
+    await refresh(); await reconcile(false);
+  }
+  async function reverse(kind) {
+    if (!need() || !state.lastBet) return;
+    const b = state.lastBet;
+    await send('', txInput(kind, b.money.amount, { roundId: b.roundId, referenceExternalTransactionId: b.externalTransactionId }));
+    await refresh(); await reconcile(false);
+  }
+
+  // ---------- cenários ----------
+  async function scenarioRace() {
+    setChecksNow('Rodando…', []);
+    if (!(await createWallet('100.00'))) return setChecksNow('Não foi possível criar a wallet', [[false, 'Veja a requisição com erro no log, na bancada.']]);
+    const a = txInput('BET', '80.00'), b = txInput('BET', '80.00');
+    const rs = await Promise.all([send('A ·', a), send('B ·', b)]);
+    const view = await refresh(); const rec = await reconcile();
+    const processed = rs.filter((r) => r.json && r.json.status === 'PROCESSED').length;
+    const rejected = rs.filter((r) => r.json && r.json.status === 'REJECTED' && r.json.failureCode === 'INSUFFICIENT_FUNDS').length;
+    const debits = view.ledger.filter((e) => e.direction === 'DEBIT').length;
+    await setChecks('Resultado da corrida', [
+      [processed === 1, `exatamente uma aposta PROCESSED (${processed})`],
+      [rejected === 1, `a outra REJECTED por INSUFFICIENT_FUNDS (${rejected})`],
+      [view.wallet.balance.amount === '20.00', `saldo final 20.00 (${view.wallet.balance.amount})`],
+      [debits === 1, `exatamente um lançamento de débito (${debits})`],
+      [rec.consistent === true, 'saldo igual ao saldo reconstruído pelo ledger'],
+    ]);
+  }
+  async function scenarioDup() {
+    setChecksNow('Rodando…', []);
+    if (!(await createWallet('100.00'))) return setChecksNow('Não foi possível criar a wallet', [[false, 'Veja a requisição com erro no log, na bancada.']]);
+    const input = txInput('BET', '10.00'); const key = keyOf(input);
+    const rs = await Promise.all(Array.from({ length: 50 }, () => api('POST', '/wagering/transactions', { body: input, key })));
+    const created = rs.filter((r) => r.status === 201).length, replays = rs.filter((r) => r.status === 200 && r.json.idempotentReplay === true).length;
+    log('50× mesma aposta (mesma Idempotency-Key)', { status: 201, ms: Math.max(...rs.map((r) => r.ms)), json: { status: `${created} nova + ${replays} replays`, balance: rs[0].json && rs[0].json.balance } });
+    state.last = { input, key }; state.lastBet = input;
+    const view = await refresh(); const rec = await reconcile();
+    const debits = view.ledger.filter((e) => e.direction === 'DEBIT').length;
+    await setChecks('Resultado das 50 requisições', [
+      [created === 1, `uma única requisição aplicou a aposta (${created})`],
+      [replays === 49, `as outras 49 foram replay idempotente (${replays})`],
+      [debits === 1, `um único débito no ledger (${debits})`],
+      [view.wallet.balance.amount === '90.00', `saldo 90.00 (${view.wallet.balance.amount})`],
+      [rec.consistent === true, 'saldo igual ao saldo reconstruído pelo ledger'],
+    ]);
+  }
+  async function scenarioOrder() {
+    setChecksNow('Rodando…', []);
+    if (!(await createWallet('100.00'))) return setChecksNow('Não foi possível criar a wallet', [[false, 'Veja a requisição com erro no log, na bancada.']]);
+    const bet = txInput('BET', '30.00');
+    const refund = txInput('REFUND', '30.00', { roundId: bet.roundId, referenceExternalTransactionId: bet.externalTransactionId });
+    const r1 = await send('1º ·', refund);
+    const tid = r1.json && r1.json.transactionId;
+    await send('2º ·', bet);
+    setChecks('REFUND antes da BET', [[r1.status === 202 && r1.json.status === 'PENDING_REFERENCE', 'REFUND sem referência ficou PENDING_REFERENCE (202), sem mexer no saldo'], [false, 'aguardando o worker reprocessar…', true]]);
+    // o worker reavalia quando next_attempt_at vence (backoff padrão: 5 s)
+    let final = null;
+    for (let i = 0; i < 20 && tid; i++) {
+      await sleep(2000);
+      const t = await api('GET', `/wagering/transactions/${tid}`);
+      if (t.json && t.json.status && t.json.status !== 'PENDING_REFERENCE') { final = t; break; }
+      await refresh();
+    }
+    const view = await refresh(); const rec = await reconcile();
+    if (final) log('Worker reprocessou o REFUND', { status: 200, ms: 0, json: { status: final.json.status, balance: final.json.balance } });
+    await setChecks('REFUND antes da BET', [
+      [r1.status === 202, 'REFUND antes da BET → 202 PENDING_REFERENCE'],
+      [Boolean(final && final.json.status === 'PROCESSED'), `depois da BET chegar, o worker aplicou o REFUND (${final ? final.json.status : 'ainda pendente'})`],
+      [view.wallet.balance.amount === '100.00', `saldo volta a 100.00 (${view.wallet.balance.amount})`],
+      [view.ledger.length === 3, `ledger: abertura + débito + crédito (${view.ledger.length} lançamentos)`],
+      [rec.consistent === true, 'saldo igual ao saldo reconstruído pelo ledger'],
+    ]);
+  }
+
+  // ---------- wiring ----------
+  document.querySelectorAll('#op-bet,#op-win,#op-loss,#btn-refresh').forEach((b) => b.setAttribute('data-needs-wallet', ''));
+  $('#player').value = uid();
+  $('#btn-newplayer').onclick = () => { $('#player').value = uid(); };
+  $('#btn-create').onclick = () => guarded(async () => {
+    const playerId = $('#player').value.trim(); const amount = $('#initial').value.trim();
+    const r = await api('POST', '/wallets', { body: { playerId, initialBalance: { amount, currency: 'BRL' } } });
+    log(`Criar wallet ${amount}`, { ...r, json: r.json && r.json.id ? { status: 'CRIADA', balance: r.json.balance } : r.json });
+    if (r.json && r.json.id) { state.playerId = playerId; state.walletId = r.json.id; state.lastBet = null; state.last = null; state.shown = null; setChecksNow('', []); await refresh(); await reconcile(false); }
+  });
+  $('#btn-refresh').onclick = () => guarded(async () => { await refresh(); await reconcile(false); });
+  $('#op-bet').onclick = () => guarded(() => op('BET'));
+  $('#op-win').onclick = () => guarded(() => op('WIN'));
+  $('#op-loss').onclick = () => guarded(() => op('LOSS'));
+  $('#op-refund').onclick = () => guarded(() => reverse('REFUND'));
+  $('#op-rollback').onclick = () => guarded(() => reverse('ROLLBACK'));
+  $('#op-replay').onclick = () => guarded(async () => {
+    const { input, key } = state.last; const r = await api('POST', '/wagering/transactions', { body: input, key });
+    log(`Reenvio (mesma chave) ${input.kind} ${input.money.amount}`, r); await refresh();
+  });
+  $('#op-conflict').onclick = () => guarded(async () => {
+    const { input, key } = state.last; const other = { ...input, money: { ...input.money, amount: '999.99' } };
+    const r = await api('POST', '/wagering/transactions', { body: other, key });
+    log(`Mesma chave, valor 999.99`, r); await refresh();
+  });
+  const pick = (fn) => (e) => {
+    if (state.busy) return;
+    document.querySelectorAll('.runner').forEach((r) => r.classList.toggle('active', r === e.currentTarget));
+    guarded(fn, e.currentTarget);
+  };
+  $('#scn-race').onclick = pick(scenarioRace);
+  $('#scn-dup').onclick = pick(scenarioDup);
+  $('#scn-order').onclick = pick(scenarioOrder);
+
+  async function health() {
+    const r = await api('GET', '/health/ready'); const el = $('#health');
+    el.className = 'pill ' + (r.status === 200 ? 'ok' : 'bad');
+    $('#health-text').textContent = r.status === 200 ? 'API, PostgreSQL e SQS ok' : 'dependência indisponível';
+  }
+  health(); setInterval(health, 10000); updateButtons();
+})();
+</script>
+</body>
+</html>
