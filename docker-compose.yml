@@ -1,0 +1,61 @@
+# PostgreSQL + SQS emulado (moto) + migrations (one-shot) + aplicação.
+#   docker compose up --build
+# Várias instâncias da aplicação (concorrência real entre processos):
+#   docker compose up --build --scale app=3     (cada réplica recebe uma porta do host na faixa 3000-3010; `docker compose ps` mostra quais)
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: wager
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wager"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # SQS emulado com moto (API SQS completa, inclui FIFO). Usado no lugar do LocalStack porque a imagem
+  # localstack/localstack:3 falhou em alguns ambientes (localstack-supervisor: not found).
+  # Para voltar ao LocalStack: image localstack/localstack:3, SERVICES=sqs e AWS_ENDPOINT_URL=http://<serviço>:4566.
+  sqs:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.12-slim
+        RUN pip install --no-cache-dir "moto[server]==5.2.4"
+        EXPOSE 4566
+        CMD ["moto_server", "-H", "0.0.0.0", "-p", "4566"]
+    ports: ["4566:4566"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4566/moto-api/')"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Migrations rodam UMA vez, antes das instâncias da aplicação (evita corrida entre réplicas).
+  migrate:
+    build: .
+    command: ["bun", "run", "migrate:up"]
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/wager
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  app:
+    build: .
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/wager
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://sqs:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      LOG_LEVEL: info
+    ports: ["3000-3010:3000"]   # faixa: permite --scale app=3 sem conflito de porta (portas 3000, 3001, 3002...)
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      sqs: { condition: service_healthy }
+    stop_grace_period: 30s   # tempo para concluir mensagens em andamento no SIGTERM
