@@ -59,6 +59,23 @@ Tudo abaixo ocorre em **uma única transação PostgreSQL** (READ COMMITTED):
 Falha de **negócio** vira estado terminal `REJECTED` (commit, auditável). Falha de **infraestrutura** propaga como exceção:
 rollback de tudo (saldo, ledger, transação, inbox, outbox) e retry seguro.
 
+### 3.1 Decisões exigidas: ORM, mapeamento do `Money` e estratégia transacional
+
+* **ORM — MikroORM.** É a opção preferencial do desafio e entrega o que o projeto usa: pool de conexões, `EntityManager.transactional()`
+  (uma transação por unidade de trabalho, com `fork()` de EntityManager por requisição) e o `Migrator` (migrations versionadas e reversíveis). TypeORM
+  também seria aceito; não havia ganho que justificasse trocar a opção preferencial. Prisma está fora do escopo. As instruções críticas
+  (`INSERT … ON CONFLICT`, `FOR NO KEY UPDATE`, `SKIP LOCKED`, `UPDATE … WHERE version`) são SQL explícito executado dentro da transação do ORM (ver §15.1).
+* **Mapeamento do `Money`.** Na persistência, valor e moeda ocupam **colunas separadas**: `amount numeric(19,2)` e `currency varchar(3)`
+  (em `wallets`, `wager_transactions` e `wallet_ledger_entries`). `numeric` é exato (nunca `float`/`double`). Na escrita, o repositório grava a
+  **string decimal** de `Money.amount` (2 casas); na leitura, o valor chega do driver como string e é reidratado com `Money.fromStored(String(valor), moeda)`,
+  que usa `decimal.js`. Em nenhum ponto o valor passa por `number`. O domínio não conhece tipos do ORM: o mapeamento linha↔`Money` fica nos repositórios.
+  As constraints do banco (`amount > 0`, `balance >= 0`, aritmética do lançamento) repetem as regras do `Money` como segunda barreira.
+* **Estratégia transacional — lock pessimista por wallet.** Uma transação PostgreSQL (READ COMMITTED) por operação, com
+  `SELECT … FOR NO KEY UPDATE` na wallet, mais `version` como defesa em profundidade (`UPDATE … WHERE version = ?`). Foi preferida a locking otimista com retry
+  porque, numa wallet disputada, o otimista gera tempestade de retries e resultado menos previsível; o lock pessimista serializa só a mesma wallet e mantém o
+  custo previsível. Atualização atômica condicionada (`SET balance = balance - x WHERE balance >= x`) não bastaria sozinha, pois cada lançamento do ledger
+  precisa de `balance_before`/`balance_after` consistentes. Detalhes e o achado do deadlock com `FOR UPDATE` estão no §5.
+
 ## 4. Garantias no schema (não só no código)
 
 | Garantia | Mecanismo no PostgreSQL |
