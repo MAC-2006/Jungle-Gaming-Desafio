@@ -199,13 +199,13 @@ comparada com `providerId` do corpo — um provedor só opera em nome de si mesm
   processo morto antes de publicar + 2 publishers assumindo; `SIGKILL` + `SIGTERM` + reinício no meio da carga.
 * **Invariante final em todos os cenários:** `wallet.balance == saldo reconstruído pelo ledger` (e cadeia contínua, nunca negativo).
 
-**Limitação honesta dos testes:** neste ambiente de desenvolvimento não havia Docker, então o SQS foi emulado com **moto** (servidor HTTP
-real de SQS em Python), não LocalStack. O código usa o SDK da AWS por HTTP, igual ao LocalStack, mas o `docker-compose.yml` **não foi executado** por mim;
-o Compose usa o mesmo moto (a imagem `localstack/localstack:3` falhou em um ambiente de teste com `localstack-supervisor: not found`). Para usar LocalStack, troque o serviço `sqs` no Compose e aponte `AWS_ENDPOINT_URL`/`TEST_SQS_ENDPOINT` para ele.
+**SQS nos testes:** os testes de integração rodam contra o **MiniStack** (emulador de AWS compatível com LocalStack, com SQS FIFO, deduplicação e DLQ) em
+`TEST_SQS_ENDPOINT` (padrão `http://127.0.0.1:4566`), e o mesmo emulador é usado no `docker-compose.yml`. O código usa apenas o SDK da AWS por HTTP; trocar por LocalStack
+ou SQS real exige apenas mudar `AWS_ENDPOINT_URL`. Suíte de integração/concorrência (72 testes) validada contra o MiniStack 1.5.28 + PostgreSQL 16.
 
 ## 14. Teste de carga (`bun run test:load`)
 
-* **Ambiente:** sandbox de **1 vCPU** compartilhado entre app, PostgreSQL 16 (`fsync=off`), SQS emulado (moto, Python) e o gerador de carga.
+* **Ambiente:** sandbox de **1 vCPU** compartilhado entre app, PostgreSQL 16 (`fsync=off`), SQS emulado (moto, Python; medição feita antes da troca para o MiniStack — os números podem variar) e o gerador de carga.
   Isto **não** é um benchmark representativo.
 * **Metodologia:** 20 wallets (saldo 1000.00), 2000 requisições `BET`/`WIN` distribuídas por wallet, concorrência 50, chaves de idempotência distintas.
 * **Resultados:** sem workers: 108 req/s, p50 443 ms, p95 670 ms, p99 1032 ms. Com consumer + publisher + worker ligados: ~62–68 req/s, p50 ~730–770 ms, p95 ~1,0–1,1 s, p99 ~1,2–1,4 s.

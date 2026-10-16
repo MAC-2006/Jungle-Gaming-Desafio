@@ -4,7 +4,7 @@ Processador de transações de apostas (`BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBAC
 idempotência persistente, **inbox/outbox transacionais**, consumo de SQS FIFO e correção sob concorrência
 (várias instâncias, retries e mensagens duplicadas ou fora de ordem).
 
-Stack: **Bun · TypeScript (strict) · NestJS · MikroORM (PostgreSQL 16) · SQS FIFO (emulado com moto no Compose) · decimal.js · zod · pino · prom-client**.
+Stack: **Bun · TypeScript (strict) · NestJS · MikroORM (PostgreSQL 16) · AWS SQS FIFO (MiniStack no Compose) · decimal.js · zod · pino · prom-client**.
 
 > Decisões, trade-offs e limitações: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -14,7 +14,7 @@ Stack: **Bun · TypeScript (strict) · NestJS · MikroORM (PostgreSQL 16) · SQS
 docker compose up --build
 ```
 
-Sobe PostgreSQL, SQS emulado (moto), um job `migrate` (roda **uma vez**, antes da aplicação) e a API em `http://localhost:3000`.
+Sobe PostgreSQL, SQS emulado (MiniStack), um job `migrate` (roda **uma vez**, antes da aplicação) e a API em `http://localhost:3000`.
 As filas FIFO (`wager-transactions.fifo`, `wager-transactions-dlq.fifo`, `wager-events.fifo`) são criadas na inicialização.
 
 ## Rodar localmente (sem containerizar a aplicação)
@@ -107,7 +107,7 @@ Desligue com `ENABLE_DEMO=false` (`/` e `/demo` passam a responder 404).
   o que impede `REFUND` + `ROLLBACK` da mesma `BET` creditando em dobro. Detalhes em `docs/ARCHITECTURE.md` §7.
 - **Inbox:** mesmo `messageId` com corpo diferente é conflito (DLQ), não duplicata.
 - **Várias instâncias:** `docker compose up --build --scale app=3` (portas 3000–3002 no host).
-- O `docker-compose.yml` e o SQS do Compose é o moto (emulador com API SQS/FIFO), o mesmo usado nos testes; o código fala com ele pelo SDK da AWS, igual faria com LocalStack ou SQS real.
+- **SQS local:** o Compose usa o **MiniStack** (`ministackorg/ministack`, porta 4566, uma das opções do desafio), o mesmo emulador usado nos testes de integração. O código fala com ele pelo SDK da AWS e funcionaria igual com LocalStack ou SQS real.
 
 ## Estrutura
 
